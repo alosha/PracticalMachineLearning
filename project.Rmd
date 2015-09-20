@@ -1,0 +1,206 @@
+---
+title:  Coursera - Practical Machine Learning - Final Project
+author: Alexey Pronin
+date: 09/17/2015
+output: html_document
+---
+
+
+## Project Introduction
+
+#### Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset). 
+
+#### Data
+The training data for this project are available here: 
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here: 
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+The data for this project come from this source: <http://groupware.les.inf.puc-rio.br/har>. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+#### What you should submit
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set.
+
+1. Your submission should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders :-).
+
+2. You should also apply your machine learning algorithm to the 20 test cases available in the test data above. Please submit your predictions in appropriate format to the programming assignment for automated grading. See the programming assignment for additional details. 
+
+#### Reproducibility 
+Due to security concerns with the exchange of R code, your code will not be run during the evaluation by your classmates. Please be sure that if they download the repo, they will be able to view the compiled HTML version of your analysis. 
+
+
+
+## Preparation
+Load the necessary libraries:
+```{r, message = FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(knitr)
+library(e1071)
+```
+
+
+
+## Getting data
+```{r}
+url_training <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_testing <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(url_training, destfile = "pml-training.csv", method = "curl")
+download.file(url_testing, destfile = "pml-testing.csv", method = "curl")
+
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+
+dim(training); dim(testing)
+```
+
+
+
+## Cleaning the Data
+1. Remove NearZeroVariance variables. This kind of predictor is not only non-informative, it can break some models you may want to fit to your data.
+```{r}
+nzv <- nearZeroVar(training)
+
+training <- training[, -nzv]
+
+dim(training)
+```
+
+2. Remove the first column
+```{r}
+training <- training[c(-1)]
+
+dim(training)
+```
+
+3. Cleaning Variables with too many NAs (>= 60%).
+```{r}
+training2 <- training
+
+for(i in 1:length(training)) {
+        if( sum( is.na(training[, i] ) ) /nrow(training) >= .6 ) {
+                for(j in 1:length(training2)) {
+                        if( length( grep(names(training[i]), names(training2)[j]) ) ==1)  {
+                                training2 <- training2[ , -j]
+                                }   
+                        } 
+                }
+        }
+
+training <- training2
+
+dim(training)
+```
+
+
+## Partitioning the data:
+Partion the training set into two. The training and testing data frames to have 60% and 40% of observations, respectively.
+```{r}
+set.seed(12345)
+
+index <- createDataPartition(training$classe, p = 0.60, list = FALSE)
+
+my_training = training[index,]
+my_testing = training[-index,]
+
+dim(my_training); dim(my_testing)
+```
+
+Transform the my_testing and testing data sets
+```{r}
+clean1 <- colnames(my_training)
+clean2 <- colnames(my_training[, -58])
+
+my_testing <- my_testing[clean1]        
+testing <- testing[clean2]    
+
+dim(my_testing); dim(testing)
+```
+
+Coerce the data into the same type
+```{r}
+for (i in 1:length(testing) ) {
+    for(j in 1:length(my_training)) {
+        if( length( grep(names(my_training[i]), names(testing)[j]) ) == 1)  {
+            class(testing[j]) <- class(my_training[i])
+        }      
+    }      
+}
+```
+
+To get the same class between testing and myTraining
+```{r}
+testing <- rbind(my_training[2, -58], testing)
+testing <- testing[-1,]
+```
+
+
+## Using ML algorithms for prediction: Decision Tree
+Fit the model
+```{r}
+fit1 <- rpart(classe ~ ., data = my_training, method = "class")
+```
+
+Plot the Decision Tree
+```{r}
+fancyRpartPlot(fit1)
+```
+
+Predict classe on testing data
+```{r}
+pred <- predict(fit1, my_testing, type = "class")
+```
+
+Calculate the accuracy
+```{r}
+confusionMatrix(my_testing$classe, pred)
+```
+
+
+
+## Using ML algorithms for prediction: Random Forests
+Fit the model
+```{r}
+fit2 <- randomForest(classe ~ ., data = my_training)
+```
+
+Predict classe on testing data
+```{r}
+pred <- predict(fit2, my_testing, type = "class")
+```
+
+Calculate the accuracy
+```{r}
+confusionMatrix(my_testing$classe, pred)
+```
+
+The Random Forests model yelds better results.
+
+## Applying the ML algorithm in the testing data set
+Random Forests gave an Accuracy in the my_testing dataset of 99.89%, which was more accurate that what I got from the Decision Trees. The expected out-of-sample error is 100-99.89 = 0.11%.
+```{r}
+pred <- predict(fit2, testing, type = "class")
+```
+
+Write the results to a text file for submission
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(pred)
+```
